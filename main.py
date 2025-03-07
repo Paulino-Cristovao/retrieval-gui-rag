@@ -1,50 +1,28 @@
 import os
-from typing import Optional
+from typing import List
 
 import gradio as gr
 from dotenv import load_dotenv
-from langchain.chains import RetrievalQA
-from langchain.llms.base import LLM
-from langchain.schema import Document
-from langchain_community.embeddings import OpenAIEmbeddings
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
-from mistralai import Mistral
+from langchain_mistralai.chat_models import ChatMistralAI
+from langchain_mistralai.embeddings import MistralAIEmbeddings
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
 
-# Load environment variables from .env if available.
+# -----------------------------------------------------------------------------
+# Load environment variables from a .env file (if available)
 load_dotenv()
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+if not MISTRAL_API_KEY:
+    raise EnvironmentError("Please set MISTRAL_API_KEY in your environment or .env file.")
 
-# Environment variables for API keys and URLs.
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "default_key")
-MISTRAL_API_URL = os.getenv("MISTRAL_API_URL", "https://api.mistral.ai")
-
-
-class MistralLLM(LLM):
-    """
-    Custom LLM wrapper for the Mistral API.
-    """
-
-    def __init__(self, api_key, api_url) -> None:
-        self.api_key = api_key
-        self.api_url = api_url
-        self.client = Mistral(api_key=api_key, api_url=api_url)
-
-    @property
-    def _llm_type(self) -> str:
-        return "mistral"
-
-    def _call(self, prompt: str, stop: Optional[list] = None) -> str:
-        """
-        Generates a response from the Mistral API based on the prompt.
-        """
-        response = self.client.generate(prompt, max_length=150)
-        return response
-
-
-def create_document_store() -> FAISS:
-    """
-    Creates a FAISS vector store from a set of Project Gutenberg documents.
-    """
-    documents = [
+# -----------------------------------------------------------------------------
+# Create a simple document store
+def create_document_store():
+    docs = [
         Document(
             page_content=(
                 "It is a truth universally acknowledged, that a single man in possession "
@@ -65,51 +43,75 @@ def create_document_store() -> FAISS:
                 "url": "https://www.gutenberg.org/ebooks/84",
             },
         ),
-        # Add more documents as needed.
+        Document(
+            page_content=(
+                "This is Maiva community located in northern Mozambique. The community is "
+                "known for its rich culture and traditions..."
+                "There is a famous family called the Muhimuas, the leader was a young Paulino..."
+            ),
+            metadata={
+                "title": "Maiva Community",
+                "url": "https://www.maivacommunity.com/",
+            },
+        ),
     ]
+    
+    # Initialize embeddings using official MistralAI integration
+    embeddings = MistralAIEmbeddings(model="mistral-embed", mistral_api_key=MISTRAL_API_KEY)
+    
+    # Create vector store
+    vector_store = FAISS.from_documents(docs, embeddings)
+    return vector_store
 
-    embeddings = OpenAIEmbeddings()
-    vectorstore = FAISS.from_documents(documents, embeddings)
-    return vectorstore
+# -----------------------------------------------------------------------------
+# Define the prompt template
+prompt = ChatPromptTemplate.from_template("""Answer the following question based only on the provided context:
 
+<context>
+{context}
+</context>
 
-def create_qa_chain(vectorstore: FAISS) -> RetrievalQA:
-    """
-    Sets up the RetrievalQA chain using the custom Mistral LLM and the FAISS vector store.
-    """
-    mistral_llm = MistralLLM(api_key=MISTRAL_API_KEY, api_url=MISTRAL_API_URL)
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=mistral_llm, chain_type="stuff", retriever=vectorstore.as_retriever()
-    )
-    return qa_chain
+Question: {input}""")
 
-
+# -----------------------------------------------------------------------------
+# Define the query-answering function
 def answer_query(query: str) -> str:
-    """
-    Retrieves relevant documents and generates an answer to the given query.
-    """
-    vectorstore = create_document_store()
-    qa_chain = create_qa_chain(vectorstore)
-    result = qa_chain.run(query)
-    return result
+    if not query.strip():
+        return "Please enter a valid query."
+    
+    # Create vector store and retriever
+    vector_store = create_document_store()
+    retriever = vector_store.as_retriever(search_kwargs={"k": 4})
+    
+    # Initialize the LLM
+    model = ChatMistralAI(
+        model="mistral-large-latest",
+        temperature=0.7,
+        mistral_api_key=MISTRAL_API_KEY
+    )
+    
+    # Create retrieval chain
+    document_chain = create_stuff_documents_chain(model, prompt)
+    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+    
+    # Run the query
+    response = retrieval_chain.invoke({"input": query})
+    return response["answer"].strip()
 
-
+# -----------------------------------------------------------------------------
+# Launch the Gradio interface
 def main() -> None:
-    """
-    Launches the Gradio interface for the RAG system.
-    """
-    iface = gr.Interface(
+    interface = gr.Interface(
         fn=answer_query,
-        inputs="text",
+        inputs=gr.Textbox(lines=2, placeholder="Enter your question here..."),
         outputs="text",
         title="Project Gutenberg RAG with Mistral API",
         description=(
-            "Enter a question and get answers generated via Retrieval-Augmented Generation "
-            "using Project Gutenberg documents."
-        ),
+            "Enter a question and get an answer generated via Retrieval-Augmented Generation "
+            "using Project Gutenberg documents and Mistral AI."
+        )
     )
-    iface.launch()
-
+    interface.launch(share=True)
 
 if __name__ == "__main__":
     main()
