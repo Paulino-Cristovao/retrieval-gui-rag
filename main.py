@@ -22,6 +22,15 @@ if not MISTRAL_API_KEY:
 # -----------------------------------------------------------------------------
 # Create a simple document store
 def create_document_store():
+    """
+    Creates a document store with predefined documents and initializes a vector store using FAISS.
+    The function performs the following steps:
+    1. Defines a list of documents with their content and metadata.
+    2. Initializes embeddings using the MistralAI integration.
+    3. Creates a vector store from the documents using FAISS.
+    Returns:
+        FAISS: A vector store containing the embedded documents.
+    """
     docs = [
         Document(
             page_content=(
