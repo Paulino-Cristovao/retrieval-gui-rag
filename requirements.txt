@@ -1,7 +1,12 @@
 gradio
+python-dotenv
 langchain
-faiss-cpu
-# openai
-# pytest
-# numpy
-# torch
+langchain-core
+langchain-community
+langchain-mistralai
+
+
+
+# docker build -t my-gradio-project .
+# docker run -p 7860:7860 --env-file .env my-gradio-project 
+# docker-compose up --build
