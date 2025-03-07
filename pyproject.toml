@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "W", "C90"]
+
+[tool.mypy]
+python_version = "3.8"
+ignore_missing_imports = true
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"

@@ -1,0 +1,7 @@
+gradio
+langchain
+faiss-cpu
+# openai
+# pytest
+# numpy
+# torch
